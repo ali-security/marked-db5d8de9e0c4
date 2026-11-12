@@ -1,17 +1,20 @@
 name: "Tests"
 on:
-  pull_request:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Jasmine spec file(s) or --filter= pattern to run instead of the full suite'
+        required: false
+        default: ''
 
 jobs:
   Test:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     strategy:
       matrix:
-        node_version: ['lts/*', 'node']
+        node_version: ['lts/*', 'node', '14']
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
@@ -22,13 +25,38 @@ jobs:
       - name: Install Dependencies
         run: npm ci
       - name: Run Unit Tests 👩🏽‍💻
+        if: inputs.test-filter == ''
         run: npm run test:unit
       - name: Run Spec Tests 👩🏽‍💻
+        if: inputs.test-filter == ''
         run: npm run test:specs
+      - name: Run Filtered Tests
+        if: inputs.test-filter != ''
+        run: npm test -- ${{ inputs.test-filter }}
+      - name: Build 🗜️
+        if: matrix.node_version == '14'
+        run: |
+          sudo apt-get update && sudo apt-get install -y faketime
+          faketime -f '@2021-05-27 16:00:00' npm run build
+          git diff --stat
+      - name: Pack
+        if: matrix.node_version == '14'
+        run: |
+          mkdir -p dist-pack
+          npm pack
+          mv marked-*.tgz dist-pack/
+      - name: Upload tarball
+        if: matrix.node_version == '14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marked-tgz
+          path: dist-pack/*.tgz
+          if-no-files-found: error
 
   Lint:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
@@ -43,6 +71,7 @@ jobs:
       github.ref == 'refs/heads/master' &&
       github.event.repository.fork == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
@@ -65,6 +94,7 @@ jobs:
   Skip:
     if: contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Skip CI 🚫
         run: echo skip ci
